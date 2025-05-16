@@ -47,6 +47,15 @@ export class RealtimeService {
           this.isConnected = true;
           this.startPingInterval();
 
+          // İlk mesaj olarak kimlik bilgilerini gönder (alternatif yöntem)
+          this.send({
+            type: "auth",
+            data: {
+              token: TOKEN,
+              vps_id: VPS_ID,
+            },
+          });
+
           // Bağlantı durumunu bildir
           this.sendStatus("connected");
 
