@@ -52,7 +52,7 @@ export class AuthService {
    */
   public async registerVps(
     vps_id: string,
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; vps_id?: string }> {
     try {
       console.log("VPS bilgileri toplanıyor...");
 
@@ -84,8 +84,17 @@ export class AuthService {
         };
       }
 
-      console.log("VPS başarıyla kaydedildi");
-      return { success: true };
+      // VPS ID'yi ayarla
+      setVpsId(data.vps_id);
+
+      console.log(`Token doğrulandı. VPS ID: ${data.vps_id}`);
+      console.log(`Global VPS_ID değerine atandı: ${data.vps_id}`);
+
+      // Doğrulama kontrolü
+      const { VPS_ID } = await import("../config");
+      console.log(`İçe aktarılan VPS_ID değeri: ${VPS_ID}`);
+
+      return { success: true, vps_id: data.vps_id };
     } catch (error: any) {
       console.error("VPS kayıt hatası:", error.message);
       return { success: false, error: error.message };

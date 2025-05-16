@@ -82,6 +82,10 @@ const startApp = async () => {
     }
 
     verifiedVpsId = verifyResult.vps_id || "";
+    console.log("Doğrulanan VPS ID:", verifiedVpsId);
+
+    // VPS ID'yi global değişkene ata
+    setVpsId(verifiedVpsId);
 
     // VPS ID'yi .env dosyasına kaydet
     saveVpsId(verifiedVpsId);

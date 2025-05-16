@@ -32,9 +32,12 @@ export class RealtimeService {
     try {
       return new Promise((resolve) => {
         console.log(`WebSocket bağlantısı kuruluyor: ${ENDPOINT_URL}`);
+        console.log(`Token değeri: '${TOKEN}'`);
+        console.log(`VPS ID değeri: '${VPS_ID}'`);
 
         // VPS ID ve TOKEN ile yetkilendirme bilgilerini URL'e ekle
         const url = `${ENDPOINT_URL}?token=${TOKEN}&vps_id=${VPS_ID}`;
+        console.log(`Bağlantı URL'si: ${url}`);
 
         this.ws = new WebSocket(url);
 
