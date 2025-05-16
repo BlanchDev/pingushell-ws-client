@@ -17,7 +17,7 @@ export const setVpsId = (id: string) => {
 };
 
 // Uygulamanın çalışmasına engel olacak eksik değişkenler
-export const requiredVars = ["TOKEN", "GITHUB_NAME"];
+export const requiredVars = ["TOKEN"];
 
 // Gereken değişkenleri kontrol et
 export const checkRequiredVars = (): boolean => {
