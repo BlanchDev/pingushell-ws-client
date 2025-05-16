@@ -48,16 +48,26 @@ export class RealtimeService {
           this.startPingInterval();
 
           // İlk mesaj olarak kimlik bilgilerini gönder (alternatif yöntem)
-          this.send({
-            type: "auth",
-            data: {
-              token: TOKEN,
-              vps_id: VPS_ID,
-            },
-          });
+          console.log("Auth mesajı gönderiliyor...");
 
-          // Bağlantı durumunu bildir
-          this.sendStatus("connected");
+          // Direct send without using the send method
+          if (this.ws) {
+            const authMessage = {
+              type: "auth",
+              data: {
+                token: TOKEN,
+                vps_id: VPS_ID,
+              },
+            };
+            const authMessageStr = JSON.stringify(authMessage);
+            console.log("Auth mesajı:", authMessageStr);
+            this.ws.send(authMessageStr);
+          }
+
+          // Bir süre bekleyip status mesajı gönder
+          setTimeout(() => {
+            this.sendStatus("connected");
+          }, 1000);
 
           resolve(true);
         };
@@ -158,7 +168,13 @@ export class RealtimeService {
    */
   private send(data: any): void {
     if (this.isConnected && this.ws) {
+      console.log("WebSocket mesajı gönderiliyor:", JSON.stringify(data));
       this.ws.send(JSON.stringify(data));
+    } else {
+      console.log(
+        "WebSocket bağlı değil, mesaj gönderilemiyor:",
+        JSON.stringify(data),
+      );
     }
   }
 
