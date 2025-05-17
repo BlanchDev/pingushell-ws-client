@@ -347,6 +347,14 @@ export class WebSocketClient {
               `Komut çalıştırıldı. Çıkış kodu: ${result.exit_code}, Sonuç uzunluğu: ${result.output.length}`,
             );
 
+            // Eğer hata varsa loglayalım
+            if (result.exit_code !== 0) {
+              console.error(
+                `Komut hata ile tamamlandı! Çıkış kodu: ${result.exit_code}`,
+              );
+              console.error(`Hata çıktısı: ${result.error || "Yok"}`);
+            }
+
             // Sonucu gönder
             const success = this.safeSend({
               type: "command_result",

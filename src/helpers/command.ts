@@ -1,5 +1,6 @@
 import { execa } from "execa";
 import os from "os";
+import path from "path";
 
 // Bu sabitler gerekli olmayacak
 // const COMMAND_SCRIPT = process.env.COMMAND_SCRIPT || "";
@@ -25,10 +26,36 @@ export const executeCommand = async (
       }`,
     );
 
-    // Doğrudan komutu çalıştır
+    // Dosya yazma işlemi için gerekli dizin kontrolü
+    const dirRegex = /> (["']?)(\/[^'">\s]+)\/([^'">\s]+)(["']?)/;
+    const dirMatch = command.match(dirRegex);
+
+    // Eğer dosya yoluna yazma işlemi varsa ve bu bir mutlak yol ise
+    if (dirMatch && dirMatch[2]) {
+      const dirPath = dirMatch[2];
+      console.log(`Dosya yoluna yazma işlemi tespit edildi: ${dirPath}`);
+
+      try {
+        // Dizinin varlığını kontrol et ve oluştur
+        await execa(`mkdir -p ${dirPath}`, {
+          shell: true,
+          reject: false, // Hata oluşsa bile devam et
+        });
+        console.log(`Dizin oluşturuldu/kontrol edildi: ${dirPath}`);
+      } catch (e) {
+        console.log(`Dizin oluşturma hatası (devam edilecek): ${e}`);
+      }
+    }
+
+    // Komut çalıştırma
     const { stdout, stderr, exitCode } = await execa(command, {
       shell: true,
       timeout: 60000, // 60 saniye zaman aşımı
+      cwd: process.cwd(), // Çalışma dizinini belirt
+      env: {
+        ...process.env,
+        HOME: os.homedir(), // HOME değişkenini doğru ayarla
+      },
     });
 
     // Başarı durumuna göre sonucu döndür
@@ -41,6 +68,7 @@ export const executeCommand = async (
   } catch (error: any) {
     console.error("Komut çalıştırma hatası:", error);
 
+    // Hata mesajını daha anlaşılır şekilde döndür
     return {
       success: false,
       output: error?.stdout || "",
