@@ -12,12 +12,22 @@ export class WebSocketClient {
   private clientId: string = ""; // Client ID'yi sakla
   private reconnectCount: number = 0;
   private maxReconnectAttempts: number = 10;
+  private lastPingTime: number = 0;
+  private lastPongTime: number = 0;
+  private connectionHealthCheckInterval: NodeJS.Timeout | null = null;
+  private manualDisconnect: boolean = false; // Bağlantının manuel olarak kapatıldığını belirtmek için
 
   /**
    * WebSocket bağlantısını başlat
    */
   public async connect(): Promise<boolean> {
     try {
+      // Eğer manuel disconnect yapıldıysa, yeniden bağlanmayı durdur
+      if (this.manualDisconnect) {
+        console.log("Manuel disconnect sonrası yeniden bağlanma devre dışı");
+        return false;
+      }
+
       return new Promise((resolve) => {
         console.log(`WebSocket bağlantısı kuruluyor: ${ENDPOINT_URL}`);
 
@@ -43,6 +53,9 @@ export class WebSocketClient {
           // Welcome mesajını bekle, auth gönderme işlemini onmessage içerisinde yapacağız
           console.log("Welcome mesajı bekleniyor...");
 
+          // Sağlık durumu kontrolü başlat
+          this.startHealthCheck();
+
           resolve(true);
         };
 
@@ -53,9 +66,15 @@ export class WebSocketClient {
           );
           this.isConnected = false;
           this.stopPingInterval();
+          this.stopHealthCheck();
 
-          // Yeniden bağlanma
-          this.scheduleReconnect();
+          // Eğer manuel disconnect yapılmadıysa yeniden bağlan
+          if (!this.manualDisconnect) {
+            // Yeniden bağlanma
+            this.scheduleReconnect();
+          } else {
+            console.log("Manuel disconnect yapıldı, yeniden bağlanılmayacak");
+          }
         };
 
         // Hata oluştuğunda
@@ -103,8 +122,10 @@ export class WebSocketClient {
   /**
    * Bağlantıyı kapat
    */
-  public disconnect(): void {
+  public disconnect(manual: boolean = true): void {
+    this.manualDisconnect = manual;
     this.stopPingInterval();
+    this.stopHealthCheck();
 
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
@@ -153,6 +174,20 @@ export class WebSocketClient {
       console.log(
         `WebSocket hazır değil (Durum: ${this.ws.readyState}), mesaj gönderilemiyor`,
       );
+
+      // Bağlantı hazır değilse, yeniden bağlanmayı dene
+      if (
+        this.ws.readyState === WebSocket.CLOSED ||
+        this.ws.readyState === WebSocket.CLOSING
+      ) {
+        console.log(
+          "WebSocket kapalı veya kapanıyor, yeniden bağlanmayı deneyeceğiz",
+        );
+        this.isConnected = false;
+        this.manualDisconnect = false; // Yeniden bağlanmayı etkinleştir
+        this.scheduleReconnect();
+      }
+
       return false;
     }
 
@@ -170,10 +205,67 @@ export class WebSocketClient {
 
       const jsonStr = JSON.stringify(data);
       this.ws.send(jsonStr);
+
+      // Eğer ping mesajı gönderiyorsak, son ping zamanını güncelle
+      if (data && data.type === "ping") {
+        this.lastPingTime = Date.now();
+      }
+
       return true;
     } catch (error) {
       console.error("Mesaj gönderme hatası:", error);
       return false;
+    }
+  }
+
+  /**
+   * Bağlantı sağlık kontrolü başlat
+   */
+  private startHealthCheck(): void {
+    this.stopHealthCheck();
+
+    this.connectionHealthCheckInterval = setInterval(() => {
+      if (!this.isConnected || !this.ws) {
+        return;
+      }
+
+      // WebSocket durumunu kontrol et
+      if (this.ws.readyState !== WebSocket.OPEN) {
+        console.log(
+          `WebSocket sağlıklı değil (Durum: ${this.ws.readyState}), yeniden bağlanma başlatılıyor`,
+        );
+        this.disconnect(false); // Manuel olmayan disconnect
+        this.scheduleReconnect();
+        return;
+      }
+
+      // Ping/Pong kontrolü - Son ping'ten 60 saniye geçtiyse ve pong alınmadıysa
+      const pingTimeout = 60000; // 60 saniye
+      if (
+        this.lastPingTime > 0 &&
+        Date.now() - this.lastPingTime > pingTimeout &&
+        (this.lastPongTime === 0 || this.lastPingTime > this.lastPongTime)
+      ) {
+        console.log(
+          `Ping-pong zaman aşımı, ${pingTimeout}ms içinde yanıt alınamadı, yeniden bağlanma başlatılıyor`,
+        );
+        this.disconnect(false); // Manuel olmayan disconnect
+        this.scheduleReconnect();
+        return;
+      }
+
+      // Ekstra ping gönder (açık kalsın diye)
+      this.safeSend({ type: "ping" });
+    }, 15000); // 15 saniyede bir kontrol et
+  }
+
+  /**
+   * Sağlık kontrolünü durdur
+   */
+  private stopHealthCheck(): void {
+    if (this.connectionHealthCheckInterval) {
+      clearInterval(this.connectionHealthCheckInterval);
+      this.connectionHealthCheckInterval = null;
     }
   }
 
@@ -267,6 +359,12 @@ export class WebSocketClient {
       ) {
         // Her 30 saniyede bir ping gönder
         this.safeSend({ type: "ping" });
+      } else if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+        console.log(
+          "Ping interval: WebSocket hazır değil, yeniden bağlanmayı deneyeceğiz",
+        );
+        this.disconnect(false); // Manuel olmayan disconnect
+        this.scheduleReconnect();
       }
     }, 30000);
   }
@@ -308,7 +406,8 @@ export class WebSocketClient {
         break;
 
       case "pong":
-        // Pong mesajı alındı, bir şey yapmaya gerek yok
+        // Pong mesajı alındı, son pong zamanını güncelle
+        this.lastPongTime = Date.now();
         break;
 
       case "auth_success":
