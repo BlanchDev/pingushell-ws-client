@@ -343,8 +343,12 @@ export class WebSocketClient {
               message.data.command_id,
             );
 
+            console.log(
+              `Komut çalıştırıldı. Çıkış kodu: ${result.exit_code}, Sonuç uzunluğu: ${result.output.length}`,
+            );
+
             // Sonucu gönder
-            this.safeSend({
+            const success = this.safeSend({
               type: "command_result",
               data: {
                 command_id: message.data.command_id,
@@ -353,9 +357,16 @@ export class WebSocketClient {
                 timestamp: new Date().toISOString(),
               },
             });
+
+            if (!success) {
+              console.error(
+                "Komut sonucu gönderilemedi, WebSocket bağlantısı problemli olabilir",
+              );
+            }
           } catch (error) {
             console.error("Komut çalıştırma hatası:", error);
 
+            // Hata sonucunu göndermeyi dene
             this.safeSend({
               type: "command_result",
               data: {
@@ -369,6 +380,8 @@ export class WebSocketClient {
             // Hazır durumunu bildir
             this.sendStatus("ready");
           }
+        } else {
+          console.error("Eksik komut bilgisi:", message.data);
         }
         break;
 
