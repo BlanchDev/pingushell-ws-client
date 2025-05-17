@@ -100,9 +100,30 @@ export class RealtimeService {
     }
 
     if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-      this.isConnected = false;
+      try {
+        // Bağlantı durumuna göre mesaj gönder
+        if (this.isConnected && this.ws.readyState === WebSocket.OPEN) {
+          this.sendStatus("disconnected");
+
+          // Bağlantıyı temiz kapatmak için kısa bir gecikme
+          setTimeout(() => {
+            if (this.ws) this.ws.close();
+            this.ws = null;
+            this.isConnected = false;
+          }, 500);
+        } else {
+          // Doğrudan kapat
+          this.ws.close();
+          this.ws = null;
+          this.isConnected = false;
+        }
+      } catch (error) {
+        console.error("Bağlantı kapatma hatası:", error);
+        // Hata durumunda da temizlik yap
+        this.ws = null;
+        this.isConnected = false;
+      }
+
       console.log("WebSocket bağlantısı kapatıldı");
     }
   }
@@ -125,9 +146,13 @@ export class RealtimeService {
   private startPingInterval(): void {
     this.stopPingInterval();
     this.pingInterval = setInterval(() => {
-      if (this.isConnected) {
+      if (
+        this.isConnected &&
+        this.ws &&
+        this.ws.readyState === WebSocket.OPEN
+      ) {
         // Her 30 saniyede bir ping gönder
-        this.send({ type: "ping" });
+        this.safeSend({ type: "ping" });
       }
     }, 30000);
   }
@@ -145,15 +170,30 @@ export class RealtimeService {
   /**
    * WebSocket üzerinden mesaj gönder
    */
-  private send(data: any): void {
-    if (this.isConnected && this.ws) {
-      console.log("WebSocket mesajı gönderiliyor:", JSON.stringify(data));
-      this.ws.send(JSON.stringify(data));
-    } else {
+  private safeSend(data: any): boolean {
+    if (!this.isConnected || !this.ws) {
       console.log(
         "WebSocket bağlı değil, mesaj gönderilemiyor:",
         JSON.stringify(data),
       );
+      return false;
+    }
+
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      console.log(
+        `WebSocket hazır değil (Durum: ${this.ws.readyState}), mesaj gönderilemiyor:`,
+        JSON.stringify(data),
+      );
+      return false;
+    }
+
+    try {
+      console.log("WebSocket mesajı gönderiliyor:", JSON.stringify(data));
+      this.ws.send(JSON.stringify(data));
+      return true;
+    } catch (error) {
+      console.error("Mesaj gönderme hatası:", error);
+      return false;
     }
   }
 
@@ -161,7 +201,7 @@ export class RealtimeService {
    * Auth mesajı gönder
    */
   private sendAuthMessage(): void {
-    this.send({
+    this.safeSend({
       type: "auth",
       data: {
         vps_id: VPS_ID,
@@ -177,7 +217,7 @@ export class RealtimeService {
   public sendStatus(
     status: "connected" | "disconnected" | "busy" | "ready",
   ): void {
-    this.send({
+    this.safeSend({
       type: "status",
       data: {
         status,
@@ -199,7 +239,7 @@ export class RealtimeService {
       exit_code?: number;
     },
   ): void {
-    this.send({
+    this.safeSend({
       type: "command_result",
       data: {
         requestId,

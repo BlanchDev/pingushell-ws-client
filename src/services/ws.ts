@@ -84,15 +84,56 @@ export class WebSocketClient {
 
     if (this.ws) {
       try {
-        this.sendStatus("disconnected");
-        this.ws.close();
+        // Bağlantı durumuna göre mesaj gönder
+        if (this.isConnected && this.ws.readyState === WebSocket.OPEN) {
+          this.sendStatus("disconnected");
+
+          // Bağlantıyı temiz kapatmak için kısa bir gecikme
+          setTimeout(() => {
+            if (this.ws) this.ws.close();
+            this.ws = null;
+            this.isConnected = false;
+          }, 500);
+        } else {
+          // Doğrudan kapat
+          this.ws.close();
+          this.ws = null;
+          this.isConnected = false;
+        }
       } catch (error) {
         console.error("Bağlantı kapatma hatası:", error);
+        // Hata durumunda da temizlik yap
+        this.ws = null;
+        this.isConnected = false;
       }
 
-      this.ws = null;
-      this.isConnected = false;
       console.log("WebSocket bağlantısı kapatıldı");
+    }
+  }
+
+  /**
+   * Güvenli mesaj gönderme
+   */
+  private safeSend(data: any): boolean {
+    if (!this.isConnected || !this.ws) {
+      console.log("WebSocket bağlı değil, mesaj gönderilemiyor");
+      return false;
+    }
+
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      console.log(
+        `WebSocket hazır değil (Durum: ${this.ws.readyState}), mesaj gönderilemiyor`,
+      );
+      return false;
+    }
+
+    try {
+      const jsonStr = JSON.stringify(data);
+      this.ws.send(jsonStr);
+      return true;
+    } catch (error) {
+      console.error("Mesaj gönderme hatası:", error);
+      return false;
     }
   }
 
@@ -100,8 +141,6 @@ export class WebSocketClient {
    * Auth mesajı gönder
    */
   private sendAuthMessage(): void {
-    if (!this.isConnected || !this.ws) return;
-
     console.log(
       `Auth mesajı gönderiliyor... VPS ID: ${VPS_ID}, Client ID: ${this.clientId}`,
     );
@@ -115,7 +154,7 @@ export class WebSocketClient {
       },
     };
 
-    this.ws.send(JSON.stringify(authMessage));
+    this.safeSend(authMessage);
   }
 
   /**
@@ -124,8 +163,6 @@ export class WebSocketClient {
   public sendStatus(
     status: "connected" | "disconnected" | "busy" | "ready",
   ): void {
-    if (!this.isConnected || !this.ws) return;
-
     const statusMessage = {
       type: "status",
       data: {
@@ -134,7 +171,7 @@ export class WebSocketClient {
       },
     };
 
-    this.ws.send(JSON.stringify(statusMessage));
+    this.safeSend(statusMessage);
   }
 
   /**
@@ -156,9 +193,13 @@ export class WebSocketClient {
     this.stopPingInterval();
 
     this.pingInterval = setInterval(() => {
-      if (this.isConnected && this.ws) {
+      if (
+        this.isConnected &&
+        this.ws &&
+        this.ws.readyState === WebSocket.OPEN
+      ) {
         // Her 30 saniyede bir ping gönder
-        this.ws.send(JSON.stringify({ type: "ping" }));
+        this.safeSend({ type: "ping" });
       }
     }, 30000);
   }
@@ -196,9 +237,7 @@ export class WebSocketClient {
 
       case "ping":
         // Ping mesajına pong ile yanıt ver
-        if (this.ws) {
-          this.ws.send(JSON.stringify({ type: "pong" }));
-        }
+        this.safeSend({ type: "pong" });
         break;
 
       case "pong":
@@ -236,36 +275,28 @@ export class WebSocketClient {
             );
 
             // Sonucu gönder
-            if (this.ws) {
-              this.ws.send(
-                JSON.stringify({
-                  type: "command_result",
-                  data: {
-                    requestId: message.data.requestId,
-                    result: result.output,
-                    exit_code: result.exit_code || 0,
-                    timestamp: new Date().toISOString(),
-                  },
-                }),
-              );
-            }
+            this.safeSend({
+              type: "command_result",
+              data: {
+                requestId: message.data.requestId,
+                result: result.output,
+                exit_code: result.exit_code || 0,
+                timestamp: new Date().toISOString(),
+              },
+            });
           } catch (error) {
             console.error("Komut çalıştırma hatası:", error);
 
-            if (this.ws) {
-              this.ws.send(
-                JSON.stringify({
-                  type: "command_result",
-                  data: {
-                    requestId: message.data.requestId,
-                    result: "Komut çalıştırma hatası oluştu",
-                    error: String(error),
-                    exit_code: 1,
-                    timestamp: new Date().toISOString(),
-                  },
-                }),
-              );
-            }
+            this.safeSend({
+              type: "command_result",
+              data: {
+                requestId: message.data.requestId,
+                result: "Komut çalıştırma hatası oluştu",
+                error: String(error),
+                exit_code: 1,
+                timestamp: new Date().toISOString(),
+              },
+            });
           } finally {
             // Hazır durumunu bildir
             this.sendStatus("ready");
