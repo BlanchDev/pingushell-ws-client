@@ -1,4 +1,3 @@
-import { execa } from "execa";
 import os from "os";
 import path from "path";
 
@@ -8,7 +7,7 @@ import path from "path";
 // const CONNECTION_TOKEN = process.env.CONNECTION_TOKEN || "";
 
 /**
- * Sistem komutu çalıştırma fonksiyonu
+ * Sistem komutu çalıştırma fonksiyonu - Bun.spawn kullanır
  */
 export const executeCommand = async (
   command: string,
@@ -37,26 +36,31 @@ export const executeCommand = async (
 
       try {
         // Dizinin varlığını kontrol et ve oluştur
-        await execa(`mkdir -p ${dirPath}`, {
-          shell: true,
-          reject: false, // Hata oluşsa bile devam et
-        });
+        const mkdir = Bun.spawn(["mkdir", "-p", dirPath]);
+        await mkdir.exited;
         console.log(`Dizin oluşturuldu/kontrol edildi: ${dirPath}`);
       } catch (e) {
         console.log(`Dizin oluşturma hatası (devam edilecek): ${e}`);
       }
     }
 
-    // Komut çalıştırma
-    const { stdout, stderr, exitCode } = await execa(command, {
-      shell: true,
-      timeout: 60000, // 60 saniye zaman aşımı
+    // Komut çalıştırma - Bun.spawn ile bash'e komutu gönderiyoruz
+    const proc = Bun.spawn(["bash", "-c", command], {
       cwd: process.cwd(), // Çalışma dizinini belirt
       env: {
         ...process.env,
         HOME: os.homedir(), // HOME değişkenini doğru ayarla
       },
+      stderr: "pipe", // Hata çıktısını yakalamak için pipe kullan
+      stdout: "pipe", // Standart çıktıyı yakalamak için pipe kullan
     });
+
+    // Çıktıları topla
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+
+    // İşlemin tamamlanmasını bekle ve çıkış kodunu al
+    const exitCode = await proc.exited;
 
     // Başarı durumuna göre sonucu döndür
     return {
@@ -71,9 +75,9 @@ export const executeCommand = async (
     // Hata mesajını daha anlaşılır şekilde döndür
     return {
       success: false,
-      output: error?.stdout || "",
-      error: error?.stderr || error?.message || "Bilinmeyen hata",
-      exit_code: error?.exitCode || 1,
+      output: "",
+      error: error?.message || "Bilinmeyen hata",
+      exit_code: 1,
     };
   }
 };
@@ -107,10 +111,9 @@ export const getSystemInfo = async (): Promise<{
 
     if (platform === "linux") {
       try {
-        // Linux dağıtım bilgisini almaya çalış
-        const { stdout: distro } = await execa("cat /etc/issue", {
-          shell: true,
-        });
+        // Linux dağıtım bilgisini almaya çalış - Bun.spawn ile
+        const proc = Bun.spawn(["cat", "/etc/issue"]);
+        const distro = await new Response(proc.stdout).text();
         additional.distro = distro.split("\\n")[0].trim();
       } catch (e) {
         additional.distro = "Unknown Linux";
