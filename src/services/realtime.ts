@@ -1,4 +1,4 @@
-import { VPS_ID, TOKEN, ENDPOINT_URL } from "../config";
+import { VPS_ID, CONNECTION_TOKEN, ENDPOINT_URL } from "../config";
 import { executeCommand } from "../helpers/command";
 
 interface CommandMessage {
@@ -32,11 +32,11 @@ export class RealtimeService {
     try {
       return new Promise((resolve) => {
         console.log(`WebSocket bağlantısı kuruluyor: ${ENDPOINT_URL}`);
-        console.log(`Token değeri: '${TOKEN}'`);
+        console.log(`Token değeri: '${CONNECTION_TOKEN}'`);
         console.log(`VPS ID değeri: '${VPS_ID}'`);
 
         // VPS ID ve TOKEN ile yetkilendirme bilgilerini URL'e ekle
-        const url = `${ENDPOINT_URL}?token=${TOKEN}&vps_id=${VPS_ID}`;
+        const url = `${ENDPOINT_URL}?token=${CONNECTION_TOKEN}&vps_id=${VPS_ID}`;
         console.log(`Bağlantı URL'si: ${url}`);
 
         this.ws = new WebSocket(url);
@@ -55,7 +55,7 @@ export class RealtimeService {
             const authMessage = {
               type: "auth",
               data: {
-                token: TOKEN,
+                token: CONNECTION_TOKEN,
                 vps_id: VPS_ID,
               },
             };
@@ -241,7 +241,10 @@ export class RealtimeService {
         this.sendStatus("busy");
 
         // Komutu çalıştır
-        const result = await executeCommand(message.data.command);
+        const result = await executeCommand(
+          message.data.command,
+          message.data.requestId,
+        );
 
         // Sonucu gönder
         this.sendCommandResult(message.data.requestId, result);

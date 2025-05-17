@@ -1,17 +1,12 @@
 import { execa } from "execa";
-import * as fs from "fs";
-import * as path from "path";
-import { TOKEN, SERVER_URL, VPS_ID } from "../config";
-
-// Komut çalıştırma betiğinin yolu
-const COMMAND_SCRIPT =
-  process.env.COMMAND_SCRIPT || "/opt/pingushell/run-command.sh";
+import os from "os";
 
 /**
  * Sistem komutu çalıştırma fonksiyonu
  */
 export const executeCommand = async (
   command: string,
+  requestId: string = "",
 ): Promise<{
   success: boolean;
   output: string;
@@ -19,45 +14,24 @@ export const executeCommand = async (
   exit_code?: number;
 }> => {
   try {
-    // Komut ID oluştur
-    const commandId = Date.now().toString() + Math.floor(Math.random() * 1000);
+    console.log(
+      `Komut çalıştırılıyor: ${command} ${
+        requestId ? `(ID: ${requestId})` : ""
+      }`,
+    );
 
-    // Komut çalıştırma betiği var mı kontrol et
-    if (fs.existsSync(COMMAND_SCRIPT)) {
-      console.log(`Komut betiği kullanılıyor: ${COMMAND_SCRIPT}`);
+    // Komutu direkt çalıştır
+    const { stdout, stderr, exitCode } = await execa(command, {
+      shell: true,
+      timeout: 60000, // 60 saniye zaman aşımı
+    });
 
-      // Komutu betik üzerinden çalıştır
-      // Betik kendisi sonuçları API'ye göndereceği için burada sadece çalıştırıp sonucu döndürüyoruz
-      const { stdout, stderr, exitCode } = await execa(COMMAND_SCRIPT, [
-        commandId,
-        command,
-        TOKEN,
-        SERVER_URL,
-      ]);
-
-      return {
-        success: exitCode === 0,
-        output: stdout,
-        error: stderr || undefined,
-        exit_code: exitCode,
-      };
-    } else {
-      console.warn(
-        `Komut betiği bulunamadı (${COMMAND_SCRIPT}), direkt komut çalıştırılıyor.`,
-      );
-
-      // Betiği kullanmadan direkt komutu çalıştır
-      const { stdout, stderr, exitCode } = await execa(command, {
-        shell: true,
-      });
-
-      return {
-        success: exitCode === 0,
-        output: stdout,
-        error: stderr || undefined,
-        exit_code: exitCode,
-      };
-    }
+    return {
+      success: exitCode === 0,
+      output: stdout,
+      error: stderr || undefined,
+      exit_code: exitCode,
+    };
   } catch (error: any) {
     console.error("Komut çalıştırma hatası:", error);
 
@@ -71,57 +45,64 @@ export const executeCommand = async (
 };
 
 /**
- * Sistem bilgilerini toplayan fonksiyonlar
+ * Sistem bilgilerini toplar
  */
 export const getSystemInfo = async (): Promise<{
   hostname: string;
-  os: string;
-  cpuCores: number;
-  ramTotal: string;
-  diskSpace: string;
+  platform: string;
+  release: string;
+  arch: string;
+  cpus: string;
+  memory: string;
+  uptime: string;
+  [key: string]: string;
 }> => {
   try {
-    // Hostname
-    const { stdout: hostname } = await execa("hostname", { shell: true });
+    // İşletim sistemi bilgilerini al
+    const hostname = os.hostname();
+    const platform = os.platform();
+    const release = os.release();
+    const arch = os.arch();
+    const cpus = `${os.cpus().length} x ${os.cpus()[0]?.model || "Unknown"}`;
+    const totalMemory = Math.round(os.totalmem() / (1024 * 1024 * 1024)); // GB cinsinden
+    const memory = `${totalMemory} GB`;
+    const uptime = `${Math.floor(os.uptime() / 3600)} hours`;
 
-    // İşletim sistemi bilgisi
-    const { stdout: osInfo } = await execa(
-      "cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2",
-      { shell: true },
-    );
+    // Ek bilgiler toplamaya çalış
+    let additional: Record<string, string> = {};
 
-    // CPU çekirdek sayısı
-    const { stdout: cpuCores } = await execa("nproc", { shell: true });
-
-    // RAM miktarı
-    const { stdout: ramInfo } = await execa(
-      "free -h | grep Mem | awk '{print $2}'",
-      { shell: true },
-    );
-
-    // Disk alanı
-    const { stdout: diskInfo } = await execa(
-      "df -h / | grep / | awk '{print $2}'",
-      { shell: true },
-    );
+    if (platform === "linux") {
+      try {
+        // Linux dağıtım bilgisini almaya çalış
+        const { stdout: distro } = await execa("cat /etc/issue", {
+          shell: true,
+        });
+        additional.distro = distro.split("\\n")[0].trim();
+      } catch (e) {
+        additional.distro = "Unknown Linux";
+      }
+    }
 
     return {
-      hostname: hostname.trim(),
-      os: osInfo.trim().replace(/"/g, ""),
-      cpuCores: parseInt(cpuCores.trim()) || 0,
-      ramTotal: ramInfo.trim(),
-      diskSpace: diskInfo.trim(),
+      hostname,
+      platform,
+      release,
+      arch,
+      cpus,
+      memory,
+      uptime,
+      ...additional,
     };
   } catch (error) {
-    console.error("Sistem bilgisi alma hatası:", error);
-
-    // Bir hata olursa varsayılan değerleri döndür
+    console.error("Sistem bilgisi toplama hatası:", error);
     return {
-      hostname: "unknown",
-      os: "unknown",
-      cpuCores: 0,
-      ramTotal: "unknown",
-      diskSpace: "unknown",
+      hostname: os.hostname(),
+      platform: os.platform(),
+      release: os.release(),
+      arch: os.arch(),
+      cpus: "Unknown",
+      memory: "Unknown",
+      uptime: "Unknown",
     };
   }
 };

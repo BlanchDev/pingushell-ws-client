@@ -1,4 +1,4 @@
-import { TOKEN, SERVER_URL, setVpsId } from "../config";
+import { CONNECTION_TOKEN, SERVER_URL, setVpsId } from "../config";
 import { getSystemInfo } from "../helpers/command";
 
 /**
@@ -17,15 +17,18 @@ export class AuthService {
       console.log("Token doğrulanıyor...");
 
       // Token doğrulama isteği
-      const response = await fetch(`${SERVER_URL}/install/verify/${TOKEN}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        `${SERVER_URL}/install/verify/${CONNECTION_TOKEN}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            token: CONNECTION_TOKEN,
+          }),
         },
-        body: JSON.stringify({
-          token: TOKEN,
-        }),
-      });
+      );
 
       const data = await response.json();
 
@@ -68,7 +71,7 @@ export class AuthService {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          token: TOKEN,
+          token: CONNECTION_TOKEN,
           vps_id: vps_id,
           hostname: systemInfo.hostname,
           system_info: systemInfo,
