@@ -26,6 +26,8 @@ export class RealtimeService {
   private pingInterval: NodeJS.Timeout | null = null;
   private roomId: string = ""; // Oda ID'sini sakla
   private clientId: string = ""; // Client ID'yi sakla
+  private reconnectCount: number = 0;
+  private maxReconnectAttempts: number = 10;
 
   /**
    * WebSocket bağlantısını oluştur
@@ -37,6 +39,16 @@ export class RealtimeService {
         console.log(`Token değeri: '${CONNECTION_TOKEN}'`);
         console.log(`VPS ID değeri: '${VPS_ID}'`);
 
+        // Eğer zaten bağlı ise önce kapat
+        if (this.ws) {
+          try {
+            this.ws.close();
+          } catch (e) {
+            // Hata yok sayılabilir
+          }
+          this.ws = null;
+        }
+
         // Basit WebSocket bağlantısı kur
         this.ws = new WebSocket(ENDPOINT_URL);
 
@@ -44,6 +56,7 @@ export class RealtimeService {
         this.ws.onopen = () => {
           console.log("WebSocket bağlantısı başarıyla kuruldu!");
           this.isConnected = true;
+          this.reconnectCount = 0; // Başarılı bağlantıda sayaç sıfırla
 
           // Welcome mesajını bekle, auth işlemini handleMessage içerisinde yapacağız
           console.log("Welcome mesajı bekleniyor...");
@@ -81,6 +94,22 @@ export class RealtimeService {
             console.error("Mesaj işleme hatası:", error);
           }
         };
+
+        // Bağlantı zaman aşımı
+        setTimeout(() => {
+          if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+            console.log("WebSocket bağlantı zaman aşımı");
+            if (this.ws) {
+              try {
+                this.ws.close();
+              } catch (e) {
+                // Hata yok sayılabilir
+              }
+            }
+            this.isConnected = false;
+            resolve(false);
+          }
+        }, 10000); // 10 saniye zaman aşımı
       });
     } catch (error) {
       console.error("WebSocket bağlantı hatası:", error);
@@ -133,10 +162,35 @@ export class RealtimeService {
    */
   private scheduleReconnect(): void {
     if (!this.reconnectTimeout) {
+      this.reconnectCount++;
+
+      // Maksimum deneme sayısını geçti mi kontrol et
+      if (this.reconnectCount > this.maxReconnectAttempts) {
+        console.log(
+          `Maksimum yeniden bağlanma denemesi aşıldı (${this.maxReconnectAttempts}). Bir süre bekleyip tekrar denenecek.`,
+        );
+        // Daha uzun bir bekleme süresi koy
+        setTimeout(() => {
+          this.reconnectCount = 0; // Sayacı sıfırla
+          this.connect(); // Tekrar dene
+        }, 60000); // 1 dakika bekle
+        return;
+      }
+
+      // Artan bekleme süresi (exponential backoff)
+      const delay = Math.min(
+        30000,
+        this.reconnectInterval * Math.pow(1.5, this.reconnectCount - 1),
+      );
+
+      console.log(
+        `Yeniden bağlanma planlandı (${this.reconnectCount}/${this.maxReconnectAttempts}). ${delay}ms sonra denenecek.`,
+      );
+
       this.reconnectTimeout = setTimeout(async () => {
         this.reconnectTimeout = null;
         await this.connect();
-      }, this.reconnectInterval);
+      }, delay);
     }
   }
 
@@ -188,6 +242,17 @@ export class RealtimeService {
     }
 
     try {
+      // Her mesaja clientId ekle (zaten varsa değiştirme)
+      if (data && typeof data === "object") {
+        if (!data.data) data.data = {};
+        if (!data.data.clientId && this.clientId) {
+          data.data.clientId = this.clientId;
+        }
+        if (!data.data.vps_id && VPS_ID) {
+          data.data.vps_id = VPS_ID;
+        }
+      }
+
       console.log("WebSocket mesajı gönderiliyor:", JSON.stringify(data));
       this.ws.send(JSON.stringify(data));
       return true;
@@ -222,6 +287,7 @@ export class RealtimeService {
       data: {
         status,
         timestamp: new Date().toISOString(),
+        clientId: this.clientId,
         vps_id: VPS_ID,
       },
     });
@@ -250,6 +316,7 @@ export class RealtimeService {
           exit_code: result.exit_code || 0,
         },
         timestamp: new Date().toISOString(),
+        clientId: this.clientId,
         vps_id: VPS_ID,
       },
     });
