@@ -4,8 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // Ortam değişkenlerini al
-export const TOKEN = process.env.TOKEN || "";
-export const GITHUB_NAME = process.env.GITHUB_NAME || "";
+export const CONNECTION_TOKEN = process.env.CONNECTION_TOKEN || "";
 export const SERVER_URL = process.env.SERVER_URL || "https://pingushell.com";
 export const ENDPOINT_URL =
   process.env.ENDPOINT_URL || "wss://pingushell.com/ws";
@@ -17,7 +16,7 @@ export const setVpsId = (id: string) => {
 };
 
 // Uygulamanın çalışmasına engel olacak eksik değişkenler
-export const requiredVars = ["TOKEN"];
+export const requiredVars = ["CONNECTION_TOKEN"];
 
 // Gereken değişkenleri kontrol et
 export const checkRequiredVars = (): boolean => {
