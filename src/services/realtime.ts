@@ -24,6 +24,7 @@ export class RealtimeService {
   private reconnectInterval: number = 5000; // 5 saniye
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
+  private roomId: string = ""; // Oda ID'sini sakla
 
   /**
    * WebSocket bağlantısını oluştur
@@ -35,39 +36,16 @@ export class RealtimeService {
         console.log(`Token değeri: '${CONNECTION_TOKEN}'`);
         console.log(`VPS ID değeri: '${VPS_ID}'`);
 
-        // VPS ID ve TOKEN ile yetkilendirme bilgilerini URL'e ekle
-        const url = `${ENDPOINT_URL}?token=${CONNECTION_TOKEN}&vps_id=${VPS_ID}`;
-        console.log(`Bağlantı URL'si: ${url}`);
-
-        this.ws = new WebSocket(url);
+        // Basit WebSocket bağlantısı kur
+        this.ws = new WebSocket(ENDPOINT_URL);
 
         // Bağlantı açıldığında
         this.ws.onopen = () => {
           console.log("WebSocket bağlantısı başarıyla kuruldu!");
           this.isConnected = true;
-          this.startPingInterval();
 
-          // İlk mesaj olarak kimlik bilgilerini gönder (alternatif yöntem)
-          console.log("Auth mesajı gönderiliyor...");
-
-          // Direct send without using the send method
-          if (this.ws) {
-            const authMessage = {
-              type: "auth",
-              data: {
-                token: CONNECTION_TOKEN,
-                vps_id: VPS_ID,
-              },
-            };
-            const authMessageStr = JSON.stringify(authMessage);
-            console.log("Auth mesajı:", authMessageStr);
-            this.ws.send(authMessageStr);
-          }
-
-          // Bir süre bekleyip status mesajı gönder
-          setTimeout(() => {
-            this.sendStatus("connected");
-          }, 1000);
+          // Welcome mesajını bekle, auth işlemini handleMessage içerisinde yapacağız
+          console.log("Welcome mesajı bekleniyor...");
 
           resolve(true);
         };
@@ -179,6 +157,19 @@ export class RealtimeService {
   }
 
   /**
+   * Auth mesajı gönder
+   */
+  private sendAuthMessage(): void {
+    this.send({
+      type: "auth",
+      data: {
+        vps_id: VPS_ID,
+        token: CONNECTION_TOKEN,
+      },
+    });
+  }
+
+  /**
    * Durum mesajı gönder
    */
   public sendStatus(
@@ -227,6 +218,36 @@ export class RealtimeService {
    */
   private async handleMessage(message: any): Promise<void> {
     try {
+      console.log(`Mesaj alındı: ${message.type}`);
+
+      // Welcome mesajına yanıt ver
+      if (message.type === "welcome") {
+        console.log("Welcome mesajı alındı, oda ID:", message.data?.roomId);
+        if (message.data?.roomId) {
+          this.roomId = message.data.roomId;
+        }
+        // Auth mesajı gönder
+        this.sendAuthMessage();
+        return;
+      }
+
+      // Auth başarılı mesajı
+      if (message.type === "auth_success") {
+        console.log("Kimlik doğrulama başarılı!");
+        // Ping interval başlat
+        this.startPingInterval();
+        // Durum mesajı gönder
+        this.sendStatus("connected");
+        return;
+      }
+
+      // Auth hata mesajı
+      if (message.type === "auth_error") {
+        console.error("Kimlik doğrulama hatası:", message.data?.message);
+        this.disconnect();
+        return;
+      }
+
       // Ping mesajına yanıt ver
       if (message.type === "ping") {
         this.sendStatus("ready");
@@ -251,7 +272,10 @@ export class RealtimeService {
 
         // Hazır durumunu bildir
         this.sendStatus("ready");
+        return;
       }
+
+      console.log(`Bilinmeyen mesaj tipi: ${message.type}`);
     } catch (error) {
       console.error("Mesaj işleme hatası:", error);
 

@@ -8,6 +8,7 @@ export class WebSocketClient {
   private reconnectInterval: number = 5000; // 5 saniye
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
+  private roomId: string = ""; // Oda ID'sini sakla
 
   /**
    * WebSocket bağlantısını başlat
@@ -25,11 +26,8 @@ export class WebSocketClient {
           console.log("WebSocket bağlantısı başarıyla kuruldu!");
           this.isConnected = true;
 
-          // Auth mesajı gönder
-          this.sendAuthMessage();
-
-          // Ping interval başlat
-          this.startPingInterval();
+          // Welcome mesajını bekle, auth gönderme işlemini onmessage içerisinde yapacağız
+          console.log("Welcome mesajı bekleniyor...");
 
           resolve(true);
         };
@@ -178,6 +176,16 @@ export class WebSocketClient {
     console.log(`Mesaj alındı: ${message.type}`);
 
     switch (message.type) {
+      case "welcome":
+        // Welcome mesajı alındı, auth gönder
+        console.log("Welcome mesajı alındı, oda ID:", message.data?.roomId);
+        if (message.data?.roomId) {
+          this.roomId = message.data.roomId;
+        }
+        // Auth mesajı gönder
+        this.sendAuthMessage();
+        break;
+
       case "ping":
         // Ping mesajına pong ile yanıt ver
         if (this.ws) {
@@ -193,6 +201,9 @@ export class WebSocketClient {
         // Auth başarılı, durum mesajı gönder
         console.log("Kimlik doğrulama başarılı!");
         this.sendStatus("connected");
+
+        // Ping interval başlat
+        this.startPingInterval();
         break;
 
       case "auth_error":
