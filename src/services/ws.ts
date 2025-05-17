@@ -168,6 +168,7 @@ export class WebSocketClient {
       data: {
         status,
         timestamp: new Date().toISOString(),
+        vps_id: VPS_ID, // VPS ID'yi ekleyerek server'ın client'ı tanımasına yardımcı ol
       },
     };
 
@@ -237,7 +238,13 @@ export class WebSocketClient {
 
       case "ping":
         // Ping mesajına pong ile yanıt ver
-        this.safeSend({ type: "pong" });
+        this.safeSend({
+          type: "pong",
+          data: {
+            vps_id: VPS_ID,
+            timestamp: new Date().toISOString(),
+          },
+        });
         break;
 
       case "pong":
