@@ -1,12 +1,17 @@
 import { execa } from "execa";
 import os from "os";
 
+// Komut çalıştırma script'i için ortam değişkeni
+const COMMAND_SCRIPT = process.env.COMMAND_SCRIPT || "";
+const SERVER_URL = process.env.SERVER_URL || "";
+const CONNECTION_TOKEN = process.env.CONNECTION_TOKEN || "";
+
 /**
  * Sistem komutu çalıştırma fonksiyonu
  */
 export const executeCommand = async (
   command: string,
-  requestId: string = "",
+  command_id: string = "",
 ): Promise<{
   success: boolean;
   output: string;
@@ -16,22 +21,42 @@ export const executeCommand = async (
   try {
     console.log(
       `Komut çalıştırılıyor: ${command} ${
-        requestId ? `(ID: ${requestId})` : ""
+        command_id ? `(ID: ${command_id})` : ""
       }`,
     );
 
-    // Komutu direkt çalıştır
-    const { stdout, stderr, exitCode } = await execa(command, {
-      shell: true,
-      timeout: 60000, // 60 saniye zaman aşımı
-    });
+    // Eğer komut betiği tanımlıysa onu kullan
+    if (COMMAND_SCRIPT && command_id) {
+      console.log(`COMMAND_SCRIPT kullanılıyor: ${COMMAND_SCRIPT}`);
 
-    return {
-      success: exitCode === 0,
-      output: stdout,
-      error: stderr || undefined,
-      exit_code: exitCode,
-    };
+      // Komut betiğini çalıştır (PinguShell kurulum betiği tarafından oluşturulan betik)
+      const { stdout, stderr, exitCode } = await execa(COMMAND_SCRIPT, [
+        command_id,
+        command,
+        CONNECTION_TOKEN,
+        SERVER_URL,
+      ]);
+
+      return {
+        success: exitCode === 0,
+        output: stdout,
+        error: stderr || undefined,
+        exit_code: exitCode,
+      };
+    } else {
+      // Komut betiği yoksa direkt çalıştır
+      const { stdout, stderr, exitCode } = await execa(command, {
+        shell: true,
+        timeout: 60000, // 60 saniye zaman aşımı
+      });
+
+      return {
+        success: exitCode === 0,
+        output: stdout,
+        error: stderr || undefined,
+        exit_code: exitCode,
+      };
+    }
   } catch (error: any) {
     console.error("Komut çalıştırma hatası:", error);
 

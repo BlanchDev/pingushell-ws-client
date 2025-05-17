@@ -328,8 +328,10 @@ export class WebSocketClient {
 
       case "command":
         // Komut çalıştır
-        if (message.data?.command && message.data?.requestId) {
-          console.log(`Komut alındı: ${message.data.command}`);
+        if (message.data?.command && message.data?.command_id) {
+          console.log(
+            `Komut alındı: ${message.data.command} (ID: ${message.data.command_id})`,
+          );
 
           // Meşgul durumu bildir
           this.sendStatus("busy");
@@ -338,14 +340,14 @@ export class WebSocketClient {
             // Komutu çalıştır
             const result = await executeCommand(
               message.data.command,
-              message.data.requestId,
+              message.data.command_id,
             );
 
             // Sonucu gönder
             this.safeSend({
               type: "command_result",
               data: {
-                requestId: message.data.requestId,
+                command_id: message.data.command_id,
                 result: result.output,
                 exit_code: result.exit_code || 0,
                 timestamp: new Date().toISOString(),
@@ -357,9 +359,8 @@ export class WebSocketClient {
             this.safeSend({
               type: "command_result",
               data: {
-                requestId: message.data.requestId,
-                result: "Komut çalıştırma hatası oluştu",
-                error: String(error),
+                command_id: message.data.command_id,
+                result: "Komut çalıştırma hatası oluştu: " + String(error),
                 exit_code: 1,
                 timestamp: new Date().toISOString(),
               },
