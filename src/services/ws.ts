@@ -9,6 +9,7 @@ export class WebSocketClient {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private roomId: string = ""; // Oda ID'sini sakla
+  private clientId: string = ""; // Client ID'yi sakla
 
   /**
    * WebSocket bağlantısını başlat
@@ -101,13 +102,16 @@ export class WebSocketClient {
   private sendAuthMessage(): void {
     if (!this.isConnected || !this.ws) return;
 
-    console.log(`Auth mesajı gönderiliyor... VPS ID: ${VPS_ID}`);
+    console.log(
+      `Auth mesajı gönderiliyor... VPS ID: ${VPS_ID}, Client ID: ${this.clientId}`,
+    );
 
     const authMessage = {
       type: "auth",
       data: {
         vps_id: VPS_ID,
         token: CONNECTION_TOKEN,
+        clientId: this.clientId, // Server'a client ID'yi de gönder
       },
     };
 
@@ -178,9 +182,13 @@ export class WebSocketClient {
     switch (message.type) {
       case "welcome":
         // Welcome mesajı alındı, auth gönder
-        console.log("Welcome mesajı alındı, oda ID:", message.data?.roomId);
+        console.log("Welcome mesajı alındı, Oda ID:", message.data?.roomId);
         if (message.data?.roomId) {
           this.roomId = message.data.roomId;
+        }
+        if (message.data?.clientId) {
+          this.clientId = message.data.clientId;
+          console.log("Client ID alındı:", this.clientId);
         }
         // Auth mesajı gönder
         this.sendAuthMessage();

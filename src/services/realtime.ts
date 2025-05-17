@@ -25,6 +25,7 @@ export class RealtimeService {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private roomId: string = ""; // Oda ID'sini sakla
+  private clientId: string = ""; // Client ID'yi sakla
 
   /**
    * WebSocket bağlantısını oluştur
@@ -165,6 +166,7 @@ export class RealtimeService {
       data: {
         vps_id: VPS_ID,
         token: CONNECTION_TOKEN,
+        clientId: this.clientId,
       },
     });
   }
@@ -225,6 +227,10 @@ export class RealtimeService {
         console.log("Welcome mesajı alındı, oda ID:", message.data?.roomId);
         if (message.data?.roomId) {
           this.roomId = message.data.roomId;
+        }
+        if (message.data?.clientId) {
+          this.clientId = message.data.clientId;
+          console.log("Client ID alındı:", this.clientId);
         }
         // Auth mesajı gönder
         this.sendAuthMessage();
