@@ -5,8 +5,8 @@ dotenv.config();
 
 // Ortam değişkenlerini al
 export const CONNECTION_TOKEN = process.env.CONNECTION_TOKEN || "";
-export const TOKEN = CONNECTION_TOKEN; // Alternatif isim için alias
 export const VPS_ID = process.env.VPS_ID || "";
+export const ROOM_ID = process.env.ROOM_ID || "";
 export const SERVER_URL =
   process.env.SERVER_URL || "https://pingushell.com/api";
 export const ENDPOINT_URL =
@@ -20,6 +20,12 @@ export const setVpsId = (id: string): void => {
   console.log(`VPS ID güncellendi: ${id}`);
 };
 
+// Room ID'yi ayarlamak için fonksiyon
+export const setRoomId = (id: string): void => {
+  process.env.ROOM_ID = id;
+  console.log(`Room ID güncellendi: ${id}`);
+};
+
 // Gereken değişkenleri kontrol et
 export const checkRequiredVars = (): boolean => {
   if (!CONNECTION_TOKEN) {
@@ -30,6 +36,12 @@ export const checkRequiredVars = (): boolean => {
   if (!VPS_ID) {
     console.error("Eksik ortam değişkeni: VPS_ID");
     return false;
+  }
+
+  if (!ROOM_ID) {
+    console.warn(
+      "Uyarı: ROOM_ID belirtilmedi, sunucu tarafından oda ataması yapılacak",
+    );
   }
 
   return true;

@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { CONNECTION_TOKEN, VPS_ID, ENDPOINT_URL } from "../config";
+import { CONNECTION_TOKEN, VPS_ID, ENDPOINT_URL, ROOM_ID } from "../config";
 import { executeCommand } from "../helpers/command";
 
 export class WebSocketClient {
@@ -8,7 +8,7 @@ export class WebSocketClient {
   private reconnectInterval: number = 5000; // 5 saniye
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
-  private roomId: string = ""; // Oda ID'sini sakla
+  private roomId: string = ROOM_ID || ""; // Oda ID'sini değişkenden al
   private clientId: string = ""; // Client ID'yi sakla
   private reconnectCount: number = 0;
   private maxReconnectAttempts: number = 10;
@@ -273,20 +273,24 @@ export class WebSocketClient {
    * Auth mesajı gönder
    */
   private sendAuthMessage(): void {
+    if (!this.isConnected || !this.ws) {
+      console.log("WebSocket bağlı değil, auth mesajı gönderilemiyor");
+      return;
+    }
+
+    // Auth mesajı gönder
     console.log(
       `Auth mesajı gönderiliyor... VPS ID: ${VPS_ID}, Client ID: ${this.clientId}`,
     );
-
-    const authMessage = {
+    this.safeSend({
       type: "auth",
       data: {
         vps_id: VPS_ID,
         token: CONNECTION_TOKEN,
-        clientId: this.clientId, // Server'a client ID'yi de gönder
+        clientId: this.clientId,
+        room_id: this.roomId, // Oda ID'sini ekle
       },
-    };
-
-    this.safeSend(authMessage);
+    });
   }
 
   /**
