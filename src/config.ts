@@ -4,13 +4,11 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // Ortam değişkenlerini al
-export const CONNECTION_TOKEN = process.env.CONNECTION_TOKEN || "";
-export const VPS_ID = process.env.VPS_ID || "";
-export const ROOM_ID = process.env.ROOM_ID || "";
-export const SERVER_URL =
-  process.env.SERVER_URL || "https://pingushell.com/api";
-export const ENDPOINT_URL =
-  process.env.ENDPOINT_URL || "wss://pingushell.com/ws";
+export const CONNECTION_TOKEN = process.env.CONNECTION_TOKEN!;
+export const VPS_ID = process.env.VPS_ID!;
+export const ROOM_ID = process.env.ROOM_ID!;
+export const SERVER_URL = process.env.SERVER_URL!;
+export const ENDPOINT_URL = process.env.ENDPOINT_URL!;
 
 // VPS ID'yi ayarlamak için fonksiyon
 export const setVpsId = (id: string): void => {
