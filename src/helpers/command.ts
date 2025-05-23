@@ -1,13 +1,152 @@
 import os from "os";
 import path from "path";
+import { logger } from "../services/logger";
 
-// Bu sabitler gerekli olmayacak
-// const COMMAND_SCRIPT = process.env.COMMAND_SCRIPT || "";
-// const SERVER_URL = process.env.SERVER_URL || "";
-// const CONNECTION_TOKEN = process.env.CONNECTION_TOKEN || "";
+// Güvenlik konfigürasyonu
+interface CommandSecurityConfig {
+  allowedCommands: string[];
+  maxOutputLength: number;
+  timeout: number;
+  allowedPaths: string[];
+}
+
+// Güvenlik yapılandırması - şu an sadece echo komutlarına izin ver
+const SECURITY_CONFIG: CommandSecurityConfig = {
+  allowedCommands: [
+    "echo", // Temel echo komutu
+  ],
+  maxOutputLength: 10_000, // Maksimum çıktı uzunluğu (10KB)
+  timeout: 30_000, // 30 saniye timeout
+  allowedPaths: [
+    "/tmp", // Geçici dosyalar için
+    "/var/log", // Log dosyaları için (okuma)
+  ],
+};
+
+// Komut validation sonucu
+interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+  sanitizedCommand?: string;
+}
 
 /**
- * Sistem komutu çalıştırma fonksiyonu - Bun.spawn kullanır
+ * Komutu güvenlik kontrolünden geçir
+ */
+const validateCommand = (command: string): ValidationResult => {
+  try {
+    // Boş komut kontrolü
+    if (!command || command.trim().length === 0) {
+      return { isValid: false, error: "Boş komut gönderildi" };
+    }
+
+    // Komut uzunluğu kontrolü
+    if (command.length > 1000) {
+      return {
+        isValid: false,
+        error: "Komut çok uzun (maksimum 1000 karakter)",
+      };
+    }
+
+    // Sanitize: Tehlikeli karakterleri temizle
+    const sanitized = command.trim();
+
+    // Tehlikeli operatörleri kontrol et
+    const dangerousPatterns = [
+      /[;&|`$(){}[\]]/g, // Shell operatörleri
+      /\.\./g, // Directory traversal
+      /\/\/+/g, // Çoklu slash
+      /\s+&&\s+/g, // AND operatörü
+      /\s+\|\|\s+/g, // OR operatörü
+      />\s*\/dev\/null/g, // Output redirection
+      /2>&1/g, // Error redirection
+      /\$\(/g, // Command substitution
+      /`/g, // Backtick execution
+    ];
+
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(sanitized)) {
+        return {
+          isValid: false,
+          error: `Güvenlik riski: Yasak karakter/operatör tespit edildi`,
+        };
+      }
+    }
+
+    // Komutu parçala ve ana komutu bul
+    const parts = sanitized.split(/\s+/);
+    const baseCommand = parts[0]?.toLowerCase();
+
+    if (!baseCommand) {
+      return { isValid: false, error: "Komut adı bulunamadı" };
+    }
+
+    // Whitelist kontrolü
+    if (!SECURITY_CONFIG.allowedCommands.includes(baseCommand)) {
+      return {
+        isValid: false,
+        error: `Komut '${baseCommand}' whitelist'te yok. İzin verilen komutlar: ${SECURITY_CONFIG.allowedCommands.join(
+          ", ",
+        )}`,
+      };
+    }
+
+    // Echo komutu için özel validasyon
+    if (baseCommand === "echo") {
+      return validateEchoCommand(sanitized);
+    }
+
+    return { isValid: true, sanitizedCommand: sanitized };
+  } catch (error) {
+    return {
+      isValid: false,
+      error: `Komut validation hatası: ${error}`,
+    };
+  }
+};
+
+/**
+ * Echo komutu için özel güvenlik kontrolü
+ */
+const validateEchoCommand = (command: string): ValidationResult => {
+  try {
+    // Echo parametrelerini kontrol et
+    const parts = command.split(/\s+/);
+
+    // Echo bayraklarını kontrol et (sadece güvenli olanlar)
+    const allowedFlags = ["-n", "-e", "-E"];
+    const flags = parts.slice(1).filter((part) => part.startsWith("-"));
+
+    for (const flag of flags) {
+      if (!allowedFlags.includes(flag)) {
+        return {
+          isValid: false,
+          error: `Echo komutu için geçersiz bayrak: ${flag}. İzin verilenler: ${allowedFlags.join(
+            ", ",
+          )}`,
+        };
+      }
+    }
+
+    // Output redirection kontrolü
+    if (command.includes(">") || command.includes(">>")) {
+      return {
+        isValid: false,
+        error: "Echo komutu ile dosya yazma işlemi şu an yasak",
+      };
+    }
+
+    return { isValid: true, sanitizedCommand: command };
+  } catch (error) {
+    return {
+      isValid: false,
+      error: `Echo validation hatası: ${error}`,
+    };
+  }
+};
+
+/**
+ * Güvenli sistem komutu çalıştırma fonksiyonu - Whitelist tabanlı
  */
 export const executeCommand = async (
   command: string,
@@ -18,51 +157,132 @@ export const executeCommand = async (
   error?: string;
   exit_code?: number;
 }> => {
+  const startTime = Date.now();
+
   try {
-    console.log(
-      `Komut çalıştırılıyor: ${command} ${
-        command_id ? `(ID: ${command_id})` : ""
-      }`,
-    );
-
-    // Dosya yazma işlemi için gerekli dizin kontrolü
-    const dirRegex = /> (["']?)(\/[^'">\s]+)\/([^'">\s]+)(["']?)/;
-    const dirMatch = command.match(dirRegex);
-
-    // Eğer dosya yoluna yazma işlemi varsa ve bu bir mutlak yol ise
-    if (dirMatch && dirMatch[2]) {
-      const dirPath = dirMatch[2];
-      console.log(`Dosya yoluna yazma işlemi tespit edildi: ${dirPath}`);
-
-      try {
-        // Dizinin varlığını kontrol et ve oluştur
-        const mkdir = Bun.spawn(["mkdir", "-p", dirPath]);
-        await mkdir.exited;
-        console.log(`Dizin oluşturuldu/kontrol edildi: ${dirPath}`);
-      } catch (e) {
-        console.log(`Dizin oluşturma hatası (devam edilecek): ${e}`);
-      }
-    }
-
-    // Komut çalıştırma - Bun.spawn ile bash'e komutu gönderiyoruz
-    const proc = Bun.spawn(["bash", "-c", command], {
-      cwd: process.cwd(), // Çalışma dizinini belirt
-      env: {
-        ...process.env,
-        HOME: os.homedir(), // HOME değişkenini doğru ayarla
-      },
-      stderr: "pipe", // Hata çıktısını yakalamak için pipe kullan
-      stdout: "pipe", // Standart çıktıyı yakalamak için pipe kullan
+    // Komut başlangıç audit logu
+    logger.commandExecution(command_id, command, "start", {
+      original_command: command,
+      timestamp: new Date().toISOString(),
     });
 
-    // Çıktıları topla
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+    logger.debug("Security validation started", {
+      command_id,
+      command_length: command.length,
+      command_preview:
+        command.substring(0, 50) + (command.length > 50 ? "..." : ""),
+    });
 
-    // İşlemin tamamlanmasını bekle ve çıkış kodunu al
-    const exitCode = await proc.exited;
+    // Komut güvenlik kontrolü
+    const validation = validateCommand(command);
+    if (!validation.isValid) {
+      // Güvenlik ihlali kaydı
+      logger.securityViolation("Command validation failed", command, {
+        command_id,
+        validation_error: validation.error,
+        blocked_at: new Date().toISOString(),
+      });
 
-    // Başarı durumuna göre sonucu döndür
+      logger.commandExecution(command_id, command, "blocked", {
+        reason: validation.error,
+        execution_time_ms: Date.now() - startTime,
+      });
+
+      return {
+        success: false,
+        output: "",
+        error: `Güvenlik hatası: ${validation.error}`,
+        exit_code: 403, // Forbidden
+      };
+    }
+
+    const sanitizedCommand = validation.sanitizedCommand!;
+    logger.info("Security validation passed", {
+      command_id,
+      original_command: command,
+      sanitized_command: sanitizedCommand,
+      validation_time_ms: Date.now() - startTime,
+    });
+
+    // Timeout ile komut çalıştırma
+    const proc = Bun.spawn(["bash", "-c", sanitizedCommand], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        HOME: os.homedir(),
+        // Güvenlik için çevresel değişkenleri kısıtla
+        PATH: "/usr/local/bin:/usr/bin:/bin", // Sadece standart PATH
+      },
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+
+    // Timeout kontrolü
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        proc.kill();
+        reject(
+          new Error(
+            `Komut zaman aşımına uğradı (${SECURITY_CONFIG.timeout}ms)`,
+          ),
+        );
+      }, SECURITY_CONFIG.timeout);
+    });
+
+    // Yarış durumu: ya komut biter ya timeout olur
+    const [stdout, stderr, exitCode] = await Promise.race([
+      Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]),
+      timeoutPromise,
+    ]);
+
+    // Çıktı uzunluğu kontrolü
+    if (stdout.length > SECURITY_CONFIG.maxOutputLength) {
+      logger.warn("Command output too large", {
+        command_id,
+        output_length: stdout.length,
+        max_allowed: SECURITY_CONFIG.maxOutputLength,
+        truncated: true,
+      });
+
+      return {
+        success: false,
+        output: stdout.substring(0, 500) + "\n... (çıktı çok uzun, kısaltıldı)",
+        error: `Çıktı maksimum uzunluğu aştı (${SECURITY_CONFIG.maxOutputLength} karakter)`,
+        exit_code: 413, // Payload Too Large
+      };
+    }
+
+    const executionTime = Date.now() - startTime;
+
+    // Performance metric
+    logger.performanceMetric("command_execution_time", executionTime, "ms", {
+      command_id,
+      exit_code: exitCode,
+      output_length: stdout.length,
+      error_length: stderr?.length || 0,
+    });
+
+    // Komut tamamlanma logu
+    if (exitCode === 0) {
+      logger.commandExecution(command_id, command, "success", {
+        execution_time_ms: executionTime,
+        output_length: stdout.length,
+        stderr_length: stderr?.length || 0,
+      });
+    } else {
+      logger.commandExecution(command_id, command, "failed", {
+        execution_time_ms: executionTime,
+        exit_code: exitCode,
+        output_length: stdout.length,
+        stderr_length: stderr?.length || 0,
+        error_output: stderr,
+      });
+    }
+
     return {
       success: exitCode === 0,
       output: stdout,
@@ -70,15 +290,53 @@ export const executeCommand = async (
       exit_code: exitCode,
     };
   } catch (error: any) {
-    console.error("Komut çalıştırma hatası:", error);
+    const executionTime = Date.now() - startTime;
 
-    // Hata mesajını daha anlaşılır şekilde döndür
+    logger.error("Command execution error", {
+      command_id,
+      command,
+      error: error?.message || "Unknown error",
+      execution_time_ms: executionTime,
+      stack_trace: error?.stack,
+    });
+
+    logger.commandExecution(command_id, command, "failed", {
+      execution_time_ms: executionTime,
+      error: error?.message || "Unknown error",
+      error_type: "system_error",
+    });
+
     return {
       success: false,
       output: "",
       error: error?.message || "Bilinmeyen hata",
-      exit_code: 1,
+      exit_code: 500, // Internal Server Error
     };
+  }
+};
+
+/**
+ * Güvenlik konfigürasyonunu döndür (debugging için)
+ */
+export const getSecurityConfig = (): CommandSecurityConfig => {
+  return { ...SECURITY_CONFIG };
+};
+
+/**
+ * Yeni komut whitelist'e ekle (geliştirme aşamasında kullanılacak)
+ */
+export const addToWhitelist = (command: string): boolean => {
+  try {
+    if (!SECURITY_CONFIG.allowedCommands.includes(command)) {
+      SECURITY_CONFIG.allowedCommands.push(command);
+      console.log(`✅ Komut whitelist'e eklendi: ${command}`);
+      return true;
+    }
+    console.log(`⚠️ Komut zaten whitelist'te: ${command}`);
+    return false;
+  } catch (error) {
+    console.error(`❌ Whitelist ekleme hatası: ${error}`);
+    return false;
   }
 };
 

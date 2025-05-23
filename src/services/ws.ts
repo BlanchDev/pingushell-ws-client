@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import { CONNECTION_TOKEN, VPS_ID, ENDPOINT_URL, ROOM_ID } from "../config";
 import { executeCommand } from "../helpers/command";
+import { logger } from "./logger";
 
 export class WebSocketClient {
   private ws: WebSocket | null = null;
@@ -46,12 +47,17 @@ export class WebSocketClient {
 
         // Bağlantı açıldığında
         this.ws.onopen = () => {
-          console.log("WebSocket bağlantısı başarıyla kuruldu!");
+          logger.connectionEvent("connect", {
+            endpoint: ENDPOINT_URL,
+            attempt_count: this.reconnectCount + 1,
+            client_id: this.clientId,
+          });
+
           this.isConnected = true;
           this.reconnectCount = 0; // Başarılı bağlantıda sayaç sıfırla
 
           // Welcome mesajını bekle, auth gönderme işlemini onmessage içerisinde yapacağız
-          console.log("Welcome mesajı bekleniyor...");
+          logger.debug("Waiting for welcome message");
 
           // Sağlık durumu kontrolü başlat
           this.startHealthCheck();
